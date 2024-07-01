@@ -44,7 +44,7 @@
             width: 50px;
             margin-left: 5px;
         }
-        #volume-dropdown {
+        #gender-dropdown {
             margin-left: 5px;
         }
     </style>
@@ -54,19 +54,10 @@
         <div id="game-info">
             <span>Exercise: <span id="exercise-number">1</span></span>
             <span>Speed: <input type="number" id="speed-input" value="0.5" min="0.1" max="10" step="0.1"></span>
-            <span>Volume: 
-                <select id="volume-dropdown">
-                    <option value="0">0%</option>
-                    <option value="0.1">10%</option>
-                    <option value="0.2">20%</option>
-                    <option value="0.3">30%</option>
-                    <option value="0.4">40%</option>
-                    <option value="0.5">50%</option>
-                    <option value="0.6">60%</option>
-                    <option value="0.7">70%</option>
-                    <option value="0.8">80%</option>
-                    <option value="0.9">90%</option>
-                    <option value="1" selected>100%</option>
+            <span>Gender: 
+                <select id="gender-dropdown">
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
                 </select>
             </span>
             <span>Points: <span id="points">0</span></span>
@@ -77,6 +68,7 @@
             <button id="pause-button">Pause</button>
             <button id="next-button">Next</button>
         </center>
+        <p id="frequency"></p>
     </div>
 
     <script>
@@ -86,49 +78,73 @@
         const startButton = document.getElementById('start-button');
         const pauseButton = document.getElementById('pause-button');
         const speedInput = document.getElementById('speed-input');
-        const volumeDropdown = document.getElementById('volume-dropdown');
+        const genderDropdown = document.getElementById('gender-dropdown');
 
-        let headPosition = { x: 0, y: 200 };
+        let headPosition = { x: 0, y: 0 };
         let gameSpeed = 0.5;
         let points = 0;
         let exerciseNumber = 1;
         let path = [];
-        let audioContext;
-        let oscillator;
-        let gainNode;
         let animationId;
         let isGameRunning = false;
         let isGamePaused = false;
-        let currentFrequency = 440; // Start at A4 (440 Hz)
+        let minFrequency = 80;
+        let maxFrequency = 500;
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let pitchDetectionIntervalId;
+        let lastKnownFrequency = null;
 
         function generatePath() {
             path = [];
-            const amplitude1 = Math.random() * 100 + 50;
-            const amplitude2 = Math.random() * 50 + 25;
-            const frequency1 = Math.random() * 0.01 + 0.005;
-            const frequency2 = Math.random() * 0.02 + 0.01;
+            const amplitude = Math.random() * 100 + 50; // Adjust amplitude range for variability
+            const frequency = Math.random() * 0.02 + 0.005; // Adjust frequency range for variability
+
+            let yOffset = Math.random() * 200 - 100; // Add a random offset to create variability in y position
+
             for (let x = 0; x < canvas.width; x++) {
-                const y = 200 + 
-                    amplitude1 * Math.sin(frequency1 * x) + 
-                    amplitude2 * Math.cos(frequency2 * x);
-                path.push({ x, y: Math.max(0, Math.min(400, y)) });
+                const normalizedY = Math.sin(frequency * x);
+                const y = 200 + amplitude * normalizedY + yOffset;
+                const scaledY = scaleY(y);
+                path.push({ x, y: scaledY });
             }
+
+            // Adjusting head position when path is generated
+            headPosition.y = path[0].y; // Set head position to the start of the path
+            headPosition.x = 0; // Ensure head starts at x=0
+
+            drawGame(); // Redraw game canvas after generating path
+        }
+
+        function scaleY(y) {
+            return ((400 - y) / 400) * (maxFrequency - minFrequency) + minFrequency;
+        }
+
+        function unscaleY(frequency) {
+            return 400 - ((frequency - minFrequency) / (maxFrequency - minFrequency)) * 400;
         }
 
         function drawGame() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // Draw y-axis labels
+            ctx.font = '12px Arial';
+            ctx.fillStyle = 'black';
+            ctx.fillText(`${maxFrequency} Hz`, 10, 20);
+            ctx.fillText(`${minFrequency} Hz`, 10, canvas.height - 10);
+
             // Draw path
             ctx.beginPath();
-            ctx.moveTo(path[0].x, path[0].y);
+            ctx.moveTo(path[0].x, unscaleY(path[0].y));
             for (let i = 1; i < path.length; i++) {
-                ctx.lineTo(path[i].x, path[i].y);
+                ctx.lineTo(path[i].x, unscaleY(path[i].y));
             }
             ctx.strokeStyle = 'blue';
             ctx.stroke();
 
             // Draw funny head
-            drawFunnyHead(headPosition.x, headPosition.y);
+            drawFunnyHead(headPosition.x, unscaleY(headPosition.y));
         }
 
         function drawFunnyHead(x, y) {
@@ -137,29 +153,29 @@
             // Draw head
             ctx.beginPath();
             ctx.arc(x, y, headSize, 0, Math.PI * 2, true);
-            ctx.fillStyle = '#FFD700'; // Gold color for the head
+            ctx.fillStyle = '#FFD700';
             ctx.fill();
             ctx.stroke();
 
             // Draw eyes
             ctx.beginPath();
-            ctx.arc(x - 5, y - 5, 3, 0, Math.PI * 2, true); // Left eye
-            ctx.arc(x + 5, y - 5, 3, 0, Math.PI * 2, true); // Right eye
-            ctx.fillStyle = '#FFFFFF'; // White color for eyes
+            ctx.arc(x - 5, y - 5, 3, 0, Math.PI * 2, true);
+            ctx.arc(x + 5, y - 5, 3, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#FFFFFF';
             ctx.fill();
             ctx.stroke();
 
             // Draw pupils
             ctx.beginPath();
-            ctx.arc(x - 5, y - 5, 1, 0, Math.PI * 2, true); // Left pupil
-            ctx.arc(x + 5, y - 5, 1, 0, Math.PI * 2, true); // Right pupil
-            ctx.fillStyle = '#000000'; // Black color for pupils
+            ctx.arc(x - 5, y - 5, 1, 0, Math.PI * 2, true);
+            ctx.arc(x + 5, y - 5, 1, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#000000';
             ctx.fill();
 
             // Draw mouth
             ctx.beginPath();
-            ctx.arc(x, y + 5, 5, 0, Math.PI, false); // Half circle for mouth
-            ctx.strokeStyle = '#000000'; // Black color for mouth
+            ctx.arc(x, y + 5, 5, 0, Math.PI, false);
+            ctx.strokeStyle = '#000000';
             ctx.stroke();
         }
 
@@ -172,7 +188,7 @@
                 return;
             }
 
-            const targetY = path[Math.floor(headPosition.x)]?.y || 200;
+            const targetY = path[Math.floor(headPosition.x)]?.y || minFrequency;
             const distance = Math.abs(targetY - headPosition.y);
             if (distance < 25) {
                 points++;
@@ -183,29 +199,28 @@
             animationId = requestAnimationFrame(updateGame);
         }
 
-        function startGame() {
+        async function startGame() {
             if (isGameRunning) return;
 
             generatePath();
-            headPosition = { x: 0, y: 200 };
             points = 0;
             document.getElementById('points').textContent = points;
             gameSpeed = parseFloat(speedInput.value);
 
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                source.connect(analyser);
+                dataArray = new Float32Array(analyser.fftSize);
             }
-            oscillator = audioContext.createOscillator();
-            gainNode = audioContext.createGain();
-            oscillator.type = 'square'; // More 8-bit like sound
-            oscillator.frequency.setValueAtTime(currentFrequency, audioContext.currentTime);
-            gainNode.gain.value = parseFloat(volumeDropdown.value);
-            oscillator.connect(gainNode).connect(audioContext.destination);
-            oscillator.start();
 
             isGameRunning = true;
             isGamePaused = false;
             updateGame();
+            startPitchDetection();
         }
 
         function stopGame() {
@@ -213,26 +228,91 @@
 
             isGameRunning = false;
             isGamePaused = false;
-            if (oscillator) {
-                oscillator.stop();
-                oscillator = null;
-            }
             if (animationId) {
                 cancelAnimationFrame(animationId);
             }
+            stopPitchDetection();
+
+            headPosition = { x: 0, y: 0 }; // Reset head position when game is stopped
+            drawGame(); // Redraw game canvas after stopping game
         }
 
         function pauseGame() {
             isGamePaused = !isGamePaused;
-            if (isGamePaused) {
-                if (oscillator) {
-                    oscillator.disconnect();
-                }
-            } else {
-                if (oscillator) {
-                    oscillator.connect(gainNode).connect(audioContext.destination);
-                }
+            if (!isGamePaused) {
                 updateGame();
+            }
+        }
+
+        function startPitchDetection() {
+            pitchDetectionIntervalId = setInterval(detectPitch, 50); // Run 20 times per second
+        }
+
+        function stopPitchDetection() {
+            clearInterval(pitchDetectionIntervalId);
+        }
+
+        function autoCorrelate(buf, sampleRate) {
+            let SIZE = buf.length;
+            let rms = 0;
+
+            for (let i = 0; i < SIZE; i++) {
+                let val = buf[i];
+                rms += val * val;
+            }
+            rms = Math.sqrt(rms / SIZE);
+
+            if (rms < 0.01) return -1;
+
+            let r1 = 0, r2 = SIZE - 1, thres = 0.2;
+            for (let i = 0; i < SIZE / 2; i++) {
+                if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+            }
+            for (let i = 1; i < SIZE / 2; i++) {
+                if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+            }
+
+            buf = buf.slice(r1, r2);
+            SIZE = buf.length;
+
+            let c = new Array(SIZE).fill(0);
+            for (let i = 0; i < SIZE; i++) {
+                for (let j = 0; j < SIZE - i; j++) {
+                    c[i] = c[i] + buf[j] * buf[j + i];
+                }
+            }
+
+            let d = 0;
+            while (c[d] > c[d + 1]) d++;
+            let maxval = -1, maxpos = -1;
+            for (let i = d; i < SIZE; i++) {
+                if (c[i] > maxval) {
+                    maxval = c[i];
+                    maxpos = i;
+                }
+            }
+            let T0 = maxpos;
+
+            let x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+            let a = (x1 + x3 - 2 * x2) / 2;
+            let b = (x3 - x1) / 2;
+            if (a) T0 = T0 - b / (2 * a);
+
+            return sampleRate / T0;
+        }
+
+        function detectPitch() {
+            analyser.getFloatTimeDomainData(dataArray);
+            const pitch = autoCorrelate(dataArray, audioContext.sampleRate);
+            if (pitch !== -1) {
+                lastKnownFrequency = pitch;
+                document.getElementById('frequency').innerText = `Detected Frequency: ${Math.round(pitch)} Hz`;
+                headPosition.y = Math.max(minFrequency, Math.min(maxFrequency, pitch));
+            } else {
+                document.getElementById('frequency').innerText = 'No pitch detected';
+                if (lastKnownFrequency !== null) {
+                    headPosition.y = lastKnownFrequency;
+                }
             }
         }
 
@@ -259,24 +339,16 @@
             gameSpeed = parseFloat(speedInput.value);
         });
 
-        volumeDropdown.addEventListener('change', () => {
-            if (gainNode) {
-                gainNode.gain.value = parseFloat(volumeDropdown.value);
+        genderDropdown.addEventListener('change', () => {
+            if (genderDropdown.value === 'male') {
+                minFrequency = 80;
+                maxFrequency = 500;
+            } else {
+                minFrequency = 150;
+                maxFrequency = 1000;
             }
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (!isGameRunning || isGamePaused) return;
-
-            if (e.key === 'ArrowUp') {
-                headPosition.y = Math.max(0, headPosition.y - 10);
-                currentFrequency *= 1.05946; // Increase frequency by one semitone
-                oscillator.frequency.setValueAtTime(currentFrequency, audioContext.currentTime);
-            } else if (e.key === 'ArrowDown') {
-                headPosition.y = Math.min(400, headPosition.y + 10);
-                currentFrequency /= 1.05946; // Decrease frequency by one semitone
-                oscillator.frequency.setValueAtTime(currentFrequency, audioContext.currentTime);
-            }
+            generatePath();
+            drawGame();
         });
 
         generatePath();
